@@ -327,8 +327,9 @@ def main():
     args = parser.parse_args()
     Verbosity = args.verbosity
     startTime = None
+    minutesOffset = None
     if (args.hourOffset is None) and (args.startTime is None):
-        minutesOffset = -1440
+        minutesOffset = -1440       # default 1 day ago
     elif args.startTime is not None:
         try:
             startTime = datetime.strptime(args.startTime, '%Y-%m-%d %H:%M:%S')
@@ -339,8 +340,12 @@ def main():
         logger.debug('Computing minutes offset from now() and startTime.')
         minutesOffset = (startTime - datetime.now()) / timedelta(minutes=1)
     else:
-        minutesOffset = float(args.hourOffset) * 60
+        if (minutesOffset is None) and (args.hourOffset is not None):
+            minutesOffset = float(args.hourOffset) * 60
+        else:
+            minutesOffset = -1440       # default 1 day ago
     logger.debug('Using minutesOffset of: %s'%minutesOffset)
+    
     if args.anyMeter is not None:
         anyMeterOk = args.anyMeter
     logger.debug('Any meter is OK? %s'%anyMeterOk)
