@@ -276,7 +276,7 @@ def main():
     parser.add_argument("-n", "--a_to_b_ratio", dest="aToBRatio", action="store", default='15', help="Number of times to read A data from V4 meters before reading B data.\n"
                                                                                                     "If zero don't read B data.")
     parser.add_argument("-s", "--serial_port", dest="serialPort", action="store", default=cfg['meter_serial_port'], help="The serial port to which the EKM meter is connected.")
-    parser.add_argument("-W", "--dontWriteToDB", dest="noWriteDb", action="store_false", default=True, help="Don't write to database [during debug defaults to True].")
+    parser.add_argument("-W", "--dontWriteToDB", dest="noWriteDb", action="store_true", default=False, help="Don't write to database [during debug defaults to True].")
     parser.add_argument("-v", "--verbosity", dest="verbosity", action="count", help="increase output verbosity", default=0)
     args = parser.parse_args()
     # Verbosity = args.verbosity
