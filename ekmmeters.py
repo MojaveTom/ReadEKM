@@ -2275,7 +2275,7 @@ class Meter(object):
                 else:
                     dt_buf = datetime.datetime(int(yy), int(mm), int(dd), int(hh), int(minutes), int(ss))
                     ekm_log("Writing Date and Time " + dt_buf.strftime("%Y-%m-%d %H:%M:%S"))
-                    dayofweek = dt_buf.date().isoweekday()
+                    dayofweek = dt_buf.date().isoweekday()%7        # Sunday is isoweekday 7; meter wants Sunday = 0
                     ekm_log("Calculated weekday " + str(dayofweek))
 
                     req_str = "015731023030363028"
