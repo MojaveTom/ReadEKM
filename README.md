@@ -25,3 +25,6 @@ Simple programs to explore Unix style socket connections via pySerial library.
 ## ExampleSecrets.ini File
 
 An example of secrets.ini file used to configure ReadEKM and FakeEKM.
+
+Note that environment variable HOST is used as part of section names
+to adapt to various machines.
