@@ -49,17 +49,17 @@
     "loggers": {
         "__main__": {
             "level": "NOTSET",
-            "handlers": ["debugconsole", "debug_file_handler"],
+            "handlers": ["debug_file_handler"],
             "propagate": false
         },
         "computeEkmCrc": {
             "level": "NOTSET",
-            "handlers": ["debugconsole", "debug_file_handler"],
+            "handlers": ["debug_file_handler"],
             "propagate": false
         },
         "pySerial.loop": {
             "level": "NOTSET",
-            "handlers": ["debugconsole", "debug_file_handler"],
+            "handlers": ["debug_file_handler"],
             "propagate": false
         }
     },
