@@ -224,7 +224,7 @@ def makeMeterDataMsg(myMeter = None):
             For my setup, the water valve is OFF if the relay is ON.
     """
 
-    MainWaterValveState = 'ON' if ((myMeter.getFieldANative(Field.State_Out) - 1) & 1) == 1 else 'OFF'
+    MainWaterValveState = 'OFF' if ((myMeter.getFieldANative(Field.State_Out) - 1) & 1) == 1 else 'ON'
 
     outputDict = {}
     outputDict["ComputerTime"]      = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
