@@ -224,7 +224,7 @@ def makeMeterDataMsg(myMeter = None):
             For my setup, the water valve is OFF if the relay is ON.
     """
 
-    MainWaterValveState = 'OFF' if ((myMeter.getFieldANative(Field.State_Out) - 1) & 1) == 1 else 'ON'
+    MainWaterValveState = 'ON' if ((myMeter.getFieldANative(Field.State_Out) - 1) & 1) == 1 else 'OFF'
 
     outputDict = {}
     outputDict["ComputerTime"]      = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
@@ -381,11 +381,11 @@ def main():
                 waterOff = None
                 if itsWet:
                     logger.debug('It is wet out there; turn OFF main water valve.')
-                    myMeter.setRelay(RelayInterval.Hold, Relay.Relay2, RelayState.RelayOpen)
+                    myMeter.setRelay(RelayInterval.Hold, Relay.Relay2, RelayState.RelayClose)
                     waterOff = 1
                 else:
                     logger.debug('It is dry out there; turn ON main water valve.')
-                    myMeter.setRelay(RelayInterval.Hold, Relay.Relay2, RelayState.RelayClose)
+                    myMeter.setRelay(RelayInterval.Hold, Relay.Relay2, RelayState.RelayOpen)
                     waterOff = 0
 
 ####    12          log raw A data to database
