@@ -26,6 +26,39 @@ High level program flow:
 21          if magic shutdown file exists, exit loop, cleanup and exit
 22          wait till next time to read A
 
+meterdata table:
++----------------+--------------+------+-----+----------------------+-------+
+| Field          | Type         | Null | Key | Default              | Extra |
++----------------+--------------+------+-----+----------------------+-------+
+| RecordId       | int(11)      | NO   |     | NULL                 |       |
+| Time           | timestamp(6) | NO   | PRI | current_timestamp(6) |       |
+| MeterTime      | datetime     | YES  |     | NULL                 |       |
+| CuFtWater      | double       | YES  |     | NULL                 |       |
+| GPM            | double       | YES  |     | NULL                 |       |
+| HouseEnergyKWH | double       | YES  |     | NULL                 |       |
+| HousePowerW    | double       | YES  |     | NULL                 |       |
+| AvgPowerW      | double       | YES  |     | NULL                 |       |
+| WaterSysKwh    | double       | YES  |     | NULL                 |       |
+| AvgWaterPowerW | double       | YES  |     | NULL                 |       |
+| WaterEnable    | double       | YES  |     | NULL                 |       |
++----------------+--------------+------+-----+----------------------+-------+
+WaterEnable = 1 if valve is open.
+'''
+
+createMeterDataSQL = '''CREATE TABLE `{schema}`.`{newTableName}` (
+  `RecordId` int(11) NOT NULL,
+  `Time` timestamp(6) NOT NULL DEFAULT current_timestamp(6),
+  `MeterTime` datetime DEFAULT NULL,
+  `CuFtWater` double DEFAULT NULL,
+  `GPM` double DEFAULT NULL,
+  `HouseEnergyKWH` double DEFAULT NULL,
+  `HousePowerW` double DEFAULT NULL,
+  `AvgPowerW` double DEFAULT NULL,
+  `WaterSysKwh` double DEFAULT NULL,
+  `AvgWaterPowerW` double DEFAULT NULL,
+  `WaterEnable` double DEFAULT NULL,
+  PRIMARY KEY (`Time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
 '''
 import pymysql.err as Error
 import time
@@ -40,7 +73,7 @@ import logging.config
 import logging.handlers
 import json
 import serial
-from ekmmeters import *
+from ekmmeters import ekm_set_log, ekm_set_log_level, Field, SerialPort, V4Meter, RelayInterval, Relay, RelayState
 import binascii
 from binascii import a2b_hex
 
@@ -48,39 +81,6 @@ from binascii import a2b_hex
 import pymysql
 
 import paho.mqtt.publish as publish
-
-#############   STASH UNUSED CODE
-'''
-        
-        result = conn.execute("SELECT MeterData, MeterTime FROM `"+schema+"`.`"+meterAtable+"` WHERE ComputerTime > timestampadd(minute, -12, now()) ORDER BY idRawMeterData LIMIT 2")
-        for r in result:
-            meterData = r[0]
-            meterTime = r[1]
-            logger.debug('Meter data record from time %s is %s bytes long of class %s.'%(meterTime, len(meterData), meterData.__class__))
-            sp.write(meterData)
-            logger.debug('Wrote meter data to serialPort.')
-            ResponseMsg = sp.getResponse()
-            logger.debug('Read %s bytes from serialPort'%len(ResponseMsg))
-        pass
-        logger.debug('Write "close" string to EKM meter.')
-        sp.write("0142300375")
-        logger.debug('Read the close string back again.')
-        ResponseMsg = sp.getResponse(maxBytes=5)
-        logger.debug('The received close string is: %s'%ResponseMsg.encode().hex())
-
-    # need meterId both as integer and as 12 char string
-            flatten meterIds list
-    meterIds = [num for elem in args.meterId for num in elem]
-    meterIdInts = [int(i) for i in meterIds]
-    meterIds = ['%012d'%i for i in meterIdInts]
-
-    logger.debug('MeterId as int is %s; as str "%s"'%(meterIdInts, meterIds))
-    if len(meterIds) > 1:
-        logger.debug('Multiple meters not yet supported.  Using only the first.')
-    meterId = meterIds[0]
-    meterIdInt = meterIdInts[0]
-
-'''
 
 #######################  GLOBAL DEFINITIONS
 
@@ -98,6 +98,7 @@ RequiredConfigParams = frozenset((
   , 'mqtt_host'
   , 'mqtt_port'
   , 'meter_serial_port'
+  , 'meter_table'
 ))
 
 # GLOBALS
@@ -112,6 +113,7 @@ dontWriteDb = True
 prevTimeNow = None
 prevCuFtWater = None
 prevWaterWh = None
+prevHouseKWH = None
 
 
 #####  Define logging
@@ -184,7 +186,42 @@ def getDatetimeFromEKM(estr='19051605223500'):
         tzinfo = localStandardTimeZone)
 
 def makeMeterDataMsg(myMeter = None):
-    global prevTimeNow, prevCuFtWater, prevWaterWh
+    ''' Function to derive interesting values from the data stored in
+        "myMeter", an EKM V4 meter instance.
+    '''
+
+    if not isinstance(myMeter, V4Meter):
+        logger.debug('The argument to the makeMeterDataMsg function is not an instance of ekmmeters.V4Meter.')
+        return None
+    global prevTimeNow, prevCuFtWater, prevWaterWh, prevHouseKWH
+    ''' This trigger function is how the database populates the meterdata table.
+        Code in this function replaces this trigger function with information from
+        this call and saved information from previous calls.
+        The results are saved in a dictionary whose keys are noted to the right.
+  INSERT IGNORE INTO `demay_farm`.`meterdata`
+    SELECT NEW.`idRawMeterData`                                                                     AS RecordId
+    , NEW.`ComputerTime`                                                                            AS Time             ['ComputerTime']
+    , NEW.`MeterTime`                                                                               AS MeterTime        ['MeterTime']
+    , round(SUBSTR(NEW.`MeterData`,220,8) * 0.1,1)                                                  AS CuFtWater        ['CuFtWater']
+    , round((SUBSTR(NEW.`MeterData`,220,8) - SUBSTR(`rmd1`.`MeterData`,220,8))
+      / (UNIX_TIMESTAMP(NEW.`ComputerTime`) + MICROSECOND(NEW.`ComputerTime`)
+      / 1000000.0 - (UNIX_TIMESTAMP(`rmd1`.`ComputerTime`) + MICROSECOND(`rmd1`.`ComputerTime`)
+      / 1000000.0)) * 0.74805194703778 * 60,3)                                                      AS GPM              ['GalPerMin']
+    , round(SUBSTR(NEW.`MeterData`,17,8) / pow(10,SUBSTR(NEW.`MeterData`,231,1)),2)                 AS HouseEnergyKWH   ['HouseKWH']
+    , SUBSTR(NEW.`MeterData`,153,7) + 0.0                                                           AS HousePowerW      ['HouseWatts']
+    , round((SUBSTR(NEW.`MeterData`,17,8) - SUBSTR(`rmd1`.`MeterData`,17,8)) * 1000.0
+      / pow(10,SUBSTR(NEW.`MeterData`,231,1))
+      / ((UNIX_TIMESTAMP(NEW.`ComputerTime`) + MICROSECOND(NEW.`ComputerTime`)
+      / 1000000.0 - (UNIX_TIMESTAMP(`rmd1`.`ComputerTime`) + MICROSECOND(`rmd1`.`ComputerTime`)
+      / 1000000.0)) / 3600.0),0)                                                                    AS AvgPowerW        ['HouseAvgPowerW']
+    , round((SUBSTR(NEW.`MeterData`,204,8) + SUBSTR(NEW.`MeterData`,212,8)) * 0.001,3)              AS WaterSysKwh      ['WaterKWH']
+    , round((SUBSTR(NEW.`MeterData`,204,8) + SUBSTR(NEW.`MeterData`,212,8) - (SUBSTR(`rmd1`.`MeterData`,204,8) + SUBSTR(`rmd1`.`MeterData`,212,8)))
+      / ((UNIX_TIMESTAMP(NEW.`ComputerTime`) + MICROSECOND(NEW.`ComputerTime`)
+      / 1000000.0 - (UNIX_TIMESTAMP(`rmd1`.`ComputerTime`) + MICROSECOND(`rmd1`.`ComputerTime`) / 1000000.0))
+      / 3600.0),0)                                                                                  AS AvgWaterPowerW   ['WaterWatts']
+    , SUBSTR(NEW.`MeterData`,230,1) % 2                                                             AS WaterEnable      ['MainWaterValve']
+    FROM (`000300002570_a_rawmeterdata` JOIN `000300002570_a_rawmeterdata` `rmd1` ON (`rmd1`.`idRawMeterData` = NEW.`idRawMeterData` - 1));
+    '''
 
     # Compute inteval in seconds since last time we were called
     timeNow = time.time()
@@ -197,20 +234,30 @@ def makeMeterDataMsg(myMeter = None):
     logger.debug('Pulse count 3 (as str): "%s"; (as int) %s'%(myMeter.getFieldA(Field.Pulse_Cnt_3), myMeter.getFieldANative(Field.Pulse_Cnt_3)))
     cuFtWater          = myMeter.getFieldANative(Field.Pulse_Cnt_3) * 0.1
     waterSysKwh        = myMeter.getFieldANative(Field.Pulse_Cnt_1) + myMeter.getFieldANative(Field.Pulse_Cnt_2)
+    HouseKWH           = myMeter.getFieldANative(Field.kWh_Tot)
     #  waterSysKwh is actually WattHours at this point.
-    #  compute some differences
+
+    #  Save previous values if this is the first time this function is called.
     if prevCuFtWater is None: prevCuFtWater = cuFtWater
     if prevWaterWh is None:   prevWaterWh = waterSysKwh
+    if prevHouseKWH is None:   prevHouseKWH = HouseKWH
 
+    #  compute some differences
     GPM = (cuFtWater - prevCuFtWater) / timeInterval
-    prevCuFtWater = cuFtWater
+    prevCuFtWater = cuFtWater     # Save current as previous for next time
     GPM = GPM * 60      # convert from Ft^3 / S to Ft^3 / M
     GPM = GPM * 7.4805194703778 # convert from Ft^3 to Gallons
 
-    # waterSysKwh andd prevWaterWh both in Watt-Hours; divide difference by timeInterval in hours
+    # waterSysKwh and prevWaterWh both in Watt-Hours; divide difference by timeInterval in hours
     waterSysWatts = (waterSysKwh - prevWaterWh) / (timeInterval / 3600)
-    prevWaterWh = waterSysKwh
+    prevWaterWh = waterSysKwh     # Save current as previous for next time
     waterSysKwh = waterSysKwh / 1000    # convert from Watt-Hours to KiloWatt-Hours
+
+    # HouseKWH and prevHouseKWH both in KiloWatt-Hours; divide difference by timeInterval in hours to get avg KW
+    # then multiply by 1000 to get avg W
+    HouseAvgPowerW = (HouseKWH - prevHouseKWH) / (timeInterval / 3600)
+    HouseAvgPowerW = HouseAvgPowerW * 1000
+    prevHouseKWH = HouseKWH     # Save current as previous for next time
 
     """ Pulse output state at time of read.  V4 Omnimeters.
     Relay1/Relay2           Relay2 controls water valve
@@ -231,16 +278,15 @@ def makeMeterDataMsg(myMeter = None):
     outputDict["MeterTime"]         = meterTime.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     outputDict["MeterId"]           = myMeter.getFieldA(Field.Meter_Address)
     outputDict["MeterType"]         = myMeter.getFieldA(Field.Model)
-    outputDict["HouseKWH"]          = round(myMeter.getFieldANative(Field.kWh_Tot), 3)
+    outputDict["HouseKWH"]          = round(HouseKWH, 3)
     outputDict["HouseWatts"]        = round(myMeter.getFieldANative(Field.RMS_Watts_Tot), 0)
+    outputDict['HouseAvgPowerW']    = round(HouseAvgPowerW, 1)
     outputDict["CuFtWater"]         = round(cuFtWater, 2)
     outputDict["GalPerMin"]         = round(GPM, 3)
     outputDict["WaterKWH"]          = round(waterSysKwh, 3)
     outputDict["WaterWatts"]        = round(waterSysWatts, 1)
     outputDict["MainWaterValve"]    = MainWaterValveState
-    outMsg = json.JSONEncoder().encode(outputDict)
-    logger.debug('Publishing meter data: "%s"'%outMsg)
-    return outMsg
+    return outputDict
 
 
 ##########################   MAIN
@@ -296,6 +342,7 @@ def main():
     meterBtable = myMeterId + cfg['meter_table_b_suffix']
     logger.debug('meterAtable is "%s"'%meterAtable)
     logger.debug('meterBtable is "%s"'%meterBtable)
+    meterTable = cfg['meter_table']
 
     #  Prepare MQTT parameters
     mqttTopic  = cfg['mqtt_topic']
@@ -318,35 +365,64 @@ def main():
     logger.debug('DBConn is: %s'%DBConn)
 
     ###  Connect to database and check to see if tables exist.
-    with DBConn.cursor() as cursor:
-        logger.info("Insertion connection to database established.")
-        query = "SHOW TABLES LIKE '%s%%'"%myMeterId
-        logger.debug('Checking database for message tables with query: %s'%query)
-        cursor.execute(query)
-        requiredTables = [meterAtable.lower(), meterBtable.lower()]
-        for r in cursor:
-            logger.debug('Checking if %s is a required table.' % r[0])
-            if r[0].lower() in requiredTables:
-                requiredTables.remove(r[0].lower())
-                logger.debug('Table %s is in the database.' % (r[0],))
-                if len(requiredTables) == 0:
-                    break
-        if len(requiredTables) > 0:
-            logger.warning('Not all required tables are in the database; creating missing tables.')
-            for ntn in requiredTables:
+    haveMeterTable = False
+    if dontWriteDb:
+        logger.debug("Writing to database disabled; don't check for table existence.")
+    else:
+        with DBConn.cursor() as cursor:
+            logger.info("Insertion connection to database established.")
+            query = "SHOW TABLES LIKE '%s%%'"%myMeterId
+            logger.debug('Checking database for message tables with query: %s'%query)
+            cursor.execute(query)
+            requiredTables = [meterAtable.lower(), meterBtable.lower()]
+            for r in cursor:
+                logger.debug('Checking if %s is a required table.' % r[0])
+                if r[0].lower() in requiredTables:
+                    requiredTables.remove(r[0].lower())
+                    logger.debug('Table %s is in the database.' % (r[0],))
+                    if len(requiredTables) == 0:
+                        break
+            if len(requiredTables) > 0:
+                logger.warning('Not all required tables are in the database; creating missing tables.')
+                for ntn in requiredTables:
+                    logger.debug('Creating table: %s'%ntn)
+                    try:
+                        query = 'CREATE TABLE `{schema}`.`{newTableName}` LIKE `{schema}`.`RawMeterData`'.format(schema=schema, newTableName=ntn)
+                        if dontWriteDb:
+                            logger.debug('NOT creating table with query: "%s"'%query)
+                        else:
+                            logger.debug('Creating table with query: "%s"'%query)
+                            cursor.execute(query)
+                    except:
+                        raise
+                logger.debug('Created required database tables.')
+            query = "SHOW TABLES LIKE '%s'"%meterTable
+            logger.debug('Checking database for message tables with query: %s'%query)
+            cursor.execute(query)
+            requiredTables = [meterTable.lower()]
+            for r in cursor:
+                logger.debug('Checking if %s is a required table.' % r[0])
+                if r[0].lower() in requiredTables:
+                    requiredTables.remove(r[0].lower())
+                    logger.debug('Table %s is in the database.' % (r[0],))
+                    if len(requiredTables) == 0:
+                        haveMeterTable = True
+                        break
+            if len(requiredTables) > 0:
                 logger.debug('Creating table: %s'%ntn)
                 try:
-                    query = 'CREATE TABLE `{schema}`.`{newTableName}` LIKE `{schema}`.`RawMeterData`'.format(schema=schema, newTableName=ntn)
+                    query = createMeterDataSQL.format(schema=schema, newTableName=meterTable)
+                    haveMeterTable = True
                     if dontWriteDb:
                         logger.debug('NOT creating table with query: "%s"'%query)
                     else:
                         logger.debug('Creating table with query: "%s"'%query)
-                        conn.execute(text(query))
+                        cursor.execute(query)
                 except:
                     raise
-            logger.debug('Created required database tables.')
-        else:
-            logger.debug('Found all required tables in database.')
+                logger.debug('Created required database meterdata table.')
+            else:
+                logger.debug('Found all required tables in database.')
 
     #  Generate a timezone for  LocalStandardTime
     #  Leaving off zone name from timezone creator generates UTC based name which may be more meaningful.
@@ -376,7 +452,7 @@ def main():
             while loopCount > 0:
                 logger.debug('Entering read/store loop with loop count = %s'%loopCount)
 ####    11          set state of water valve based on magic water valve file
-####                    (as a by-product, A data is read)
+####                    (as a by-product, "A" data is read)
                 itsWet = os.path.exists(os.path.expandvars('${HOME}/.WeatherWet'))
                 waterOff = None
                 if itsWet:
@@ -399,21 +475,48 @@ def main():
                 queryValueDict['MeterData'] = myMeter.m_raw_read_a.encode('ascii')
                 queryValueDict['WaterOff'] = waterOff
 
-                query = """INSERT INTO `{schema}`.`{table}` 
-                (MeterTime, MeterId, DataType, MeterType, WaterOff, MeterData) 
+                query = """INSERT INTO `{schema}`.`{table}`
+                (MeterTime, MeterId, DataType, MeterType, WaterOff, MeterData)
                 VALUES (%(MeterTime)s, %(MeterId)s, %(DataType)s, %(MeterType)s, %(WaterOff)s, %(MeterData)s)""".format(schema = schema,
                     table = meterAtable)
                 logger.debug('Response A insertion query is: %s'%query)
                 if dontWriteDb:
                     logger.debug('NOT inserting into A table with query: "%s"'%cursor.mogrify(query, queryValueDict))
+                    idRawMeterData = -1
                 else:
                     logger.debug('Inserting into A table with query: "%s"'%cursor.mogrify(query, queryValueDict))
                     cursor.execute(query, queryValueDict)
                     DBConn.commit()
+                    cursor.execute('SELECT idRawMeterData FROM `{schema}`.`{table}` ORDER BY ComputerTime DESC LIMIT 1'.format(schema = schema,
+                    table = meterAtable))
+                    for r in cursor:
+                        idRawMeterData = r[0]
+                        logger.debug('Record id for raw data just inserted is: %s'%idRawMeterData)
+
 
 ####    14          publish selected/computed A data to MQTT
-                publish.single(mqttTopic, payload = makeMeterDataMsg(myMeter), hostname = mqttHost, port = mqttPort)
+                outputDict = makeMeterDataMsg(myMeter)
+                outMsg = json.JSONEncoder().encode(outputDict)
+                logger.debug('Publishing meter data: "%s"'%outMsg)
+                publish.single(mqttTopic, payload = outMsg, hostname = mqttHost, port = mqttPort)
 
+####    14a          insert selected/computed data to database
+                if haveMeterTable:
+                    # Convert MainWaterValve from text 'ON'/'OFF' to 1 or 0   NOTE:  This is the state of the valve BEFORE we posibly change it.
+                    # To get the expected NEW value look at the waterOff variable.  I believe the correct value is: (1-waterOff).
+                    outputDict['MainWaterValve'] = 1 if outputDict['MainWaterValve'] == 'ON' else 0
+                    query = """ INSERT IGNORE INTO  `{schema}`.`{table}`
+                    (RecordId, Time, MeterTime, CuFtWater, GPM, HouseEnergyKWH, HousePowerW, AvgPowerW, WaterSysKwh, AvgWaterPowerW, WaterEnable)
+                    VALUES ({id}, %(ComputerTime)s, %(MeterTime)s, %(CuFtWater)s, %(GalPerMin)s, %(HouseKWH)s, %(HouseWatts)s, %(HouseAvgPowerW)s, %(WaterKWH)s, %(WaterWatts)s, %(MainWaterValve)s)
+                    """.format(schema = schema, table = meterTable, id = idRawMeterData)
+                    if dontWriteDb:
+                        logger.debug('NOT inserting into meter data table with query: "%s"'%cursor.mogrify(query, outputDict))
+                    else:
+                        logger.debug('Inserting into meter data table with query: "%s"'%cursor.mogrify(query, outputDict))
+                        cursor.execute(query, outputDict)
+                        DBConn.commit()
+                else:
+                    logger.debug("Don't have a meterdata table to which to write.")
 
 ####    15          if "time to read B"
                 if time.time() > nextBTime:
@@ -430,8 +533,8 @@ def main():
                     queryValueDict['MeterType'] = myMeter.getFieldB(Field.Model)
                     queryValueDict['MeterData'] = myMeter.m_raw_read_b.encode('ascii')
                     queryValueDict['WaterOff'] = 0
-                    query = """INSERT INTO `{schema}`.`{table}` 
-                    (MeterTime, MeterId, DataType, MeterType, WaterOff, MeterData) 
+                    query = """INSERT INTO `{schema}`.`{table}`
+                    (MeterTime, MeterId, DataType, MeterType, WaterOff, MeterData)
                     VALUES (%(MeterTime)s, %(MeterId)s, %(DataType)s, %(MeterType)s, %(WaterOff)s, %(MeterData)s)""".format(schema = schema,
                         table = meterBtable)
                     logger.debug('Response B insertion query is: %s'%query)
