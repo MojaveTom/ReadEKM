@@ -234,7 +234,7 @@ def makeMeterDataMsg(myMeter = None):
     logger.debug('Pulse count 3 (as str): "%s"; (as int) %s'%(myMeter.getFieldA(Field.Pulse_Cnt_3), myMeter.getFieldANative(Field.Pulse_Cnt_3)))
     cuFtWater          = myMeter.getFieldANative(Field.Pulse_Cnt_3) * 0.1
     waterSysKwh        = myMeter.getFieldANative(Field.Pulse_Cnt_1) + myMeter.getFieldANative(Field.Pulse_Cnt_2)
-    HouseKWH           = myMeter.getFieldANative(Field.kWh_Tot)
+    HouseKWH           = myMeter.getFieldANative(Field.kWh_Tot) * .01       #  Automatic scaling doesn't seem to be working
     #  waterSysKwh is actually WattHours at this point.
 
     #  Save previous values if this is the first time this function is called.
@@ -256,7 +256,7 @@ def makeMeterDataMsg(myMeter = None):
     # HouseKWH and prevHouseKWH both in KiloWatt-Hours; divide difference by timeInterval in hours to get avg KW
     # then multiply by 1000 to get avg W  ?????
     HouseAvgPowerW = (HouseKWH - prevHouseKWH) / (timeInterval / 3600)
-    HouseAvgPowerW = HouseAvgPowerW # * 1000    #   ?????????????
+    HouseAvgPowerW = HouseAvgPowerW * 1000    #   ?????????????
     prevHouseKWH = HouseKWH     # Save current as previous for next time
 
     """ Pulse output state at time of read.  V4 Omnimeters.
