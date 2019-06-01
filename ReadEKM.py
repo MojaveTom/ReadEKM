@@ -254,9 +254,9 @@ def makeMeterDataMsg(myMeter = None):
     waterSysKwh = waterSysKwh / 1000    # convert from Watt-Hours to KiloWatt-Hours
 
     # HouseKWH and prevHouseKWH both in KiloWatt-Hours; divide difference by timeInterval in hours to get avg KW
-    # then multiply by 1000 to get avg W
+    # then multiply by 1000 to get avg W  ?????
     HouseAvgPowerW = (HouseKWH - prevHouseKWH) / (timeInterval / 3600)
-    HouseAvgPowerW = HouseAvgPowerW * 1000
+    HouseAvgPowerW = HouseAvgPowerW # * 1000    #   ?????????????
     prevHouseKWH = HouseKWH     # Save current as previous for next time
 
     """ Pulse output state at time of read.  V4 Omnimeters.
