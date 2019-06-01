@@ -252,9 +252,9 @@ RequestMsgV4ReqTypeA = bytearray(b'\x30\x30')
 RequestMsgV4ReqTypeB = bytearray(b'\x30\x31')
 
 Output1OnMsg =  bytearray(b'\x01\x57\x31\x02\x30\x30\x38\x31\x28\x31\x30\x30\x30\x30\x29\x03\x31\x61')
-                                
+
 Output1OffMsg = bytearray(b'\x01\x57\x31\x02\x30\x30\x38\x31\x28\x30\x30\x30\x30\x30\x29\x03\x21\x21')
-                                 
+
 Output2OnMsg =  bytearray(b'\x01\x57\x31\x02\x30\x30\x38\x32\x28\x31\x30\x30\x30\x30\x29\x03\x25\x11')
 
 Output2OffMsg = bytearray(b'\x01\x57\x31\x02\x30\x30\x38\x32\x28\x30\x30\x30\x30\x30\x29\x03\x35\x51')
@@ -332,4 +332,3 @@ RequestCmdHeader = bytearray(b'\x2f\x3f')
 RequestMsg_fixedBegin = slice(0,2)
 
 RequestCmdEnding = bytearray(b'\x21\x0d\x0a')
-#RequestCmdEnding_discriminator = slice(-3)  ## negative start indices don't work with slice function
