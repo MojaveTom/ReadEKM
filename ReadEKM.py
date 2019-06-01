@@ -274,8 +274,8 @@ def makeMeterDataMsg(myMeter = None):
     MainWaterValveState = 'OFF' if ((myMeter.getFieldANative(Field.State_Out) - 1) & 1) == 1 else 'ON'
 
     outputDict = {}
-    outputDict["ComputerTime"]      = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S.%f")
-    outputDict["MeterTime"]         = meterTime.astimezone(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    outputDict["ComputerTime"]      = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+    outputDict["MeterTime"]         = meterTime.strftime("%Y-%m-%d %H:%M:%S")
     outputDict["MeterId"]           = myMeter.getFieldA(Field.Meter_Address)
     outputDict["MeterType"]         = myMeter.getFieldA(Field.Model)
     outputDict["HouseKWH"]          = round(HouseKWH, 3)
