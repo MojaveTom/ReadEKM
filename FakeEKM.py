@@ -28,7 +28,6 @@ import socketserver
 import Messages     # My message definitions -- has messages as bytearrays.
 
 from ekmmeters import calc_crc16
-from Messages import *
 
 # GLOBAL DEFINITIONS
 DBConn = None
@@ -40,8 +39,8 @@ anyMeterOk = True
 
 # Configuration parameters without which we can do nothing.
 RequiredConfigParams = frozenset((
-    'viewer_host', 'viewer_schema', 'viewer_port', 'viewer_user', 
-    'viewer_password', 'meter_id', 'meter_table_a_suffix', 
+    'viewer_host', 'viewer_schema', 'viewer_port', 'viewer_user',
+    'viewer_password', 'meter_id', 'meter_table_a_suffix',
     'meter_table_b_suffix', 'meter_serial_port'
 ))
 
@@ -91,7 +90,7 @@ def GetDatabaseV4AData(MeterId):
     logger.debug('Getting Meter A data from database with query: %s'%query)
     try:
         result = DBConn.execute(text(query))
-        logger.debug('Result from database query is %s'%result)
+        logger.debug('Result from database query is %s'%result, flush = True)
         for r in result:
             logger.debug('Returning result: %s'%r[0])
             return bytearray(r[0])         # Just return the first result
@@ -117,84 +116,84 @@ def GetDatabaseV4BData(MeterId):
 
 def makeEkmDateTime(theTime=datetime.now()):
     ekmTime=bytearray(a2b_hex(theTime.strftime('%y%m%d  %H%M%S').encode('ascii').hex()))
-    ekmTime[MeterDateTime_weekday]=a2b_hex(('%02x'%theTime.isoweekday()).encode('ascii').hex())
+    ekmTime[Messages.MeterDateTime_weekday]=a2b_hex(('%02x'%theTime.isoweekday()).encode('ascii').hex())
     return ekmTime
 
 def GenerateV4AData(MeterId = bytearray(b'\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30')):
     if (minutesOffset > 0) or ((MeterId.decode('ascii') != myMeterId) and not anyMeterOk):
         return GenerateFakeV4AData(MeterId)
     else:
-        ResponseMsg = GetDatabaseV4AData(MeterId)
-        if ResponseMsg is None:
+        Messages.ResponseMsg = GetDatabaseV4AData(MeterId)
+        if Messages.ResponseMsg is None:
             return GenerateFakeV4AData(MeterId)
-        ResponseMsg[ResponseV4_meterNo] = MeterId
-        ResponseMsg[CrcField] = a2b_hex(calc_crc16(ResponseMsg[CrcCalc]))
-        return ResponseMsg
+        Messages.ResponseMsg[Messages.ResponseV4_meterNo] = MeterId
+        Messages.ResponseMsg[Messages.CrcField] = a2b_hex(calc_crc16(Messages.ResponseMsg[Messages.CrcCalc]))
+        return Messages.ResponseMsg
 
 
 def GenerateV4BData(MeterId = bytearray(b'\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30')):
     if (minutesOffset > 0) or ((MeterId.decode('ascii') != myMeterId) and not anyMeterOk):
         return GenerateFakeV4BData(MeterId)
     else:
-        ResponseMsg = GetDatabaseV4BData(MeterId)
-        if ResponseMsg is None:
+        Messages.ResponseMsg = GetDatabaseV4BData(MeterId)
+        if Messages.ResponseMsg is None:
             return GenerateFakeV4BData(MeterId)
-        ResponseMsg[ResponseV4_meterNo] = MeterId
-        ResponseMsg[CrcField] = a2b_hex(calc_crc16(ResponseMsg[CrcCalc]))
-        return ResponseMsg
+        Messages.ResponseMsg[Messages.ResponseV4_meterNo] = MeterId
+        Messages.ResponseMsg[Messages.CrcField] = a2b_hex(calc_crc16(Messages.ResponseMsg[Messages.CrcCalc]))
+        return Messages.ResponseMsg
 
 def GenerateFakeV4AData(MeterId):
-    ResponseMsg = bytearray(255)
+    Messages.ResponseMsg = bytearray(255)
     #  Fill the message with random digits
-    for i in range(len(ResponseMsg)):
-        ResponseMsg[i] = random.randint(0x30,0x39)
+    for i in range(len(Messages.ResponseMsg)):
+        Messages.ResponseMsg[i] = random.randint(0x30,0x39)
     # Put in known fields
-    ResponseMsg[ResponseV4_STX] = STX
-    ResponseMsg[ResponseV4_model] = ResponseV4model
-    ResponseMsg[ResponseV3_FWver] = ResponseV4FWver
-    ResponseMsg[ResponseV4_meterNo] = MeterId
-    ResponseMsg[ResponseV4_postamble] = ResponseV4postamble
-    ResponseMsg[ResponseV4_time] = makeEkmDateTime()
-    ResponseMsg[ResponseV4_respKind] = RequestMsgV4ReqTypeB
-    ResponseMsg[ResponseV4AData_kwhDecimals] = b'\x32'    
-    ResponseMsg[CrcField] = a2b_hex(calc_crc16(ResponseMsg[CrcCalc]))
-    return ResponseMsg
+    Messages.ResponseMsg[Messages.ResponseV4_STX] = Messages.STX
+    Messages.ResponseMsg[Messages.ResponseV4_model] = Messages.ResponseV4model
+    Messages.ResponseMsg[Messages.ResponseV3_FWver] = Messages.ResponseV4FWver
+    Messages.ResponseMsg[Messages.ResponseV4_meterNo] = MeterId
+    Messages.ResponseMsg[Messages.ResponseV4_postamble] = Messages.ResponseV4postamble
+    Messages.ResponseMsg[Messages.ResponseV4_time] = makeEkmDateTime()
+    Messages.ResponseMsg[Messages.ResponseV4_respKind] =Messages.RequestMsgV4ReqTypeB
+    Messages.ResponseMsg[Messages.ResponseV4AData_kwhDecimals] = b'\x32'
+    Messages.ResponseMsg[Messages.CrcField] = a2b_hex(calc_crc16(Messages.ResponseMsg[Messages.CrcCalc]))
+    return Messages.ResponseMsg
 
 def GenerateFakeV4BData(MeterId):
-    ResponseMsg = GenerateV4AData(MeterId)
-    ResponseMsg[ResponseV4_respKind] = RequestMsgV4ReqTypeB
-    ResponseMsg[CrcField] = a2b_hex(calc_crc16(ResponseMsg[CrcCalc]))
-    return ResponseMsg
+    Messages.ResponseMsg = GenerateV4AData(MeterId)
+    Messages.ResponseMsg[Messages.ResponseV4_respKind] = Messages.RequestMsgV4ReqTypeB
+    Messages.ResponseMsg[Messages.CrcField] = a2b_hex(calc_crc16(Messages.ResponseMsg[Messages.CrcCalc]))
+    return Messages.ResponseMsg
 
 def GenerateV3Data(MeterId=bytearray(b'\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30\x30')):
-    ResponseMsg = bytearray(255)
+    Messages.ResponseMsg = bytearray(255)
     #  Fill the message with random digits
-    for i in range(len(ResponseMsg)):
-        ResponseMsg[i] = random.randint(0x30,0x39)
+    for i in range(len(Messages.ResponseMsg)):
+        Messages.ResponseMsg[i] = random.randint(0x30,0x39)
     # Put in known fields
-    ResponseMsg[ResponseV3_STX] = STX
-    ResponseMsg[ResponseV3_model] = ResponseV3model
-    ResponseMsg[ResponseV3_FWver] = ResponseV3FWver
-    ResponseMsg[ResponseV3_meterNo] = MeterId
-    ResponseMsg[ResponseV3_time] = makeEkmDateTime()
-    ResponseMsg[ResponseV3_reserved] = bytearray(len(ResponseMsg[ResponseV3_reserved]))
-    ResponseMsg[ResponseV3_postamble] = ResponseV3postamble
-    ResponseMsg[CrcField] = a2b_hex(calc_crc16(ResponseMsg[CrcCalc]))
-    return ResponseMsg
+    Messages.ResponseMsg[Messages.ResponseV3_STX] = Messages.STX
+    Messages.ResponseMsg[Messages.ResponseV3_model] = Messages.ResponseV3model
+    Messages.ResponseMsg[Messages.ResponseV3_FWver] = Messages.ResponseV3FWver
+    Messages.ResponseMsg[Messages.ResponseV3_meterNo] = MeterId
+    Messages.ResponseMsg[Messages.ResponseV3_time] = makeEkmDateTime()
+    Messages.ResponseMsg[Messages.ResponseV3_reserved] = bytearray(len(Messages.ResponseMsg[Messages.ResponseV3_reserved]))
+    Messages.ResponseMsg[Messages.ResponseV3_postamble] = Messages.ResponseV3postamble
+    Messages.ResponseMsg[Messages.CrcField] = a2b_hex(calc_crc16(Messages.ResponseMsg[Messages.CrcCalc]))
+    return Messages.ResponseMsg
 
 def GenerateRandomDataTable(tableId=b'\x30\x30\x30\x30'):
-    ResponseMsg = bytearray(255)
-    ResponseMsg[RespondTable_STX] = STX
-    ResponseMsg[RespondTable_tableId] = tableId
-    ResponseMsg[RespondTable_preamble] = RespondTablepreamble
-    for i in range(len(ResponseMsg[RespondTable_body])):
-        ResponseMsg[RespondTable_body][i]=random.randint(0x30,0x39)
-    ResponseMsg[RespondTable_postamble] = RespondTablepostamble
-    ResponseMsg[CrcField]=a2b_hex(calc_crc16(ResponseMsg[CrcCalc]))    
-    return ResponseMsg
+    Messages.ResponseMsg = bytearray(255)
+    Messages.ResponseMsg[Messages.RespondTable_STX] = Messages.STX
+    Messages.ResponseMsg[Messages.RespondTable_tableId] = tableId
+    Messages.ResponseMsg[Messages.RespondTable_preamble] = Messages.RespondTablepreamble
+    for i in range(len(Messages.ResponseMsg[Messages.RespondTable_body])):
+        Messages.ResponseMsg[Messages.RespondTable_body][i]=random.randint(0x30,0x39)
+    Messages.ResponseMsg[Messages.RespondTable_postamble] = Messages.RespondTablepostamble
+    Messages.ResponseMsg[Messages.CrcField]=a2b_hex(calc_crc16(Messages.ResponseMsg[Messages.CrcCalc]))
+    return Messages.ResponseMsg
 
 class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
-    
+
     def handle(self):
         '''
             result = conn.execute("SELECT MeterData, MeterTime FROM `"+schema+"`.`"+meterAtable +
@@ -206,15 +205,15 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
                     meterTime, len(meterData), meterData.__class__))
                 sp.write(meterData)
                 logger.debug('Wrote meter data to serialPort.')
-                ResponseMsg = sp.getResponse()
-                logger.debug('Read %s bytes from serialPort' % len(ResponseMsg))
+                Messages.ResponseMsg = sp.getResponse()
+                logger.debug('Read %s bytes from serialPort' % len(Messages.ResponseMsg))
             pass
             logger.debug('Write "close" string to EKM meter.')
             sp.write("0142300375")
             logger.debug('Read the close string back again.')
-            ResponseMsg = sp.getResponse(maxBytes=5)
+            Messages.ResponseMsg = sp.getResponse(maxBytes=5)
             logger.debug('The received close string is: %s' %
-                        ResponseMsg.encode().hex())
+                        Messages.ResponseMsg.encode().hex())
         '''
 
         cur_thread_name = threading.current_thread().name
@@ -226,44 +225,44 @@ class ThreadedTCPRequestHandler(socketserver.BaseRequestHandler):
                 logger.debug('Got empty message: close connection.')
                 time.sleep(1)
                 break
-            response = ResponseNak      #### default response to unknown or malformed messages is NAK
-            if data[RequestMsg_fixedBegin] == RequestCmdHeader:
+            response = Messages.ResponseNak      #### default response to unknown or malformed messages is NAK
+            if data[Messages.RequestMsg_fixedBegin] == Messages.RequestCmdHeader:
                 #  handle request messages
                 logger.debug('Handling request message.')
-                if (len(data) == len(RequestMsgV3)) and (data[-3:] == RequestCmdEnding):
+                if (len(data) == len(Messages.RequestMsgV3)) and (data[-3:] == Messages.RequestCmdEnding):
                     logger.debug('Handling V3 request message.')
-                    response = GenerateV3Data(data[RequestMsgV3Def_meterId])
-                elif (len(data) == len(RequestMsgV4)) and (data[-3:] == RequestCmdEnding):
-                    if data[RequestMsgV4Def_reqType] == RequestMsgV4ReqTypeA:
+                    response = GenerateV3Data(data[Messages.RequestMsgV3Def_meterId])
+                elif (len(data) == len(Messages.RequestMsgV4)) and (data[-3:] == Messages.RequestCmdEnding):
+                    if data[Messages.RequestMsgV4Def_reqType] == Messages.RequestMsgV4ReqTypeA:
                         logger.debug('Handling V4A request message.')
-                        response = GenerateV4AData(data[RequestMsgV4Def_meterId])
-                    elif data[RequestMsgV4Def_reqType] == RequestMsgV4ReqTypeB:
+                        response = GenerateV4AData(data[Messages.RequestMsgV4Def_meterId])
+                    elif data[Messages.RequestMsgV4Def_reqType] == Messages.RequestMsgV4ReqTypeB:
                         logger.debug('Handling V4B request message.')
-                        response = GenerateV4BData(data[RequestMsgV4Def_meterId])
+                        response = GenerateV4BData(data[Messages.RequestMsgV4Def_meterId])
                     else:   # Unknown data kind
                         logger.critical('Got unknown V4 request message.')
                         pass        #  send default ResponseNak
                 else:   #  Ill formed request message
                     logger.critical('Got unknown request message.')
                     pass        #  send default ResponseNak
-            elif data == CloseMsg:      #  CloseMsg doesn't have a valid CRC (looks like last byte is only part of a CRC)
+            elif data == Messages.CloseMsg:      #  CloseMsg doesn't have a valid CRC (looks like last byte is only part of a CRC)
                 # received termination code
                 logger.debug('Got Close message.')
                 #  If FakeEKM was a state machine, we would set the state back to beginning.
                 continue           #  Don't respond; DON'T close connection
-            elif data[CrcField] != a2b_hex(calc_crc16(data[CrcCalc])):      # Crc must be correct for all other messages
+            elif data[Messages.CrcField] != a2b_hex(calc_crc16(data[Messages.CrcCalc])):      # Crc must be correct for all other messages
                 logger.warning('Got message with incorrect CRC.')
-                logger.info('Message CRC: %s, calc CRC is: %s'%(data[CrcField], a2b_hex(calc_crc16(data[CrcCalc]))))
+                logger.info('Message CRC: %s, calc CRC is: %s'%(data[Messages.CrcField], a2b_hex(calc_crc16(data[Messages.CrcCalc]))))
                 pass        #  send default ResponseNak
-            elif data[SendPasswordMsg_preamble] == SendPasswordMsg[SendPasswordMsg_preamble]:
+            elif data[Messages.SendPasswordMsg_preamble] == Messages.SendPasswordMsg[Messages.SendPasswordMsg_preamble]:
                 logger.debug('Got Password message.')
-                response = ResponseAck      # Any password is ok
-            elif data[SetCmdHeader_discriminator] == SetCmdHeader:
+                response = Messages.ResponseAck      # Any password is ok
+            elif data[Messages.SetCmdHeader_discriminator] == Messages.SetCmdHeader:
                 logger.debug('Got Set command.')
-                response = ResponseAck      # swallow all set commands without doing anything
-            elif data[ReadCmdHeader_discriminator] == ReadCmdHeader:
+                response = Messages.ResponseAck      # swallow all set commands without doing anything
+            elif data[Messages.ReadCmdHeader_discriminator] == Messages.ReadCmdHeader:
                 logger.debug('Got Read request.')
-                response = GenerateRandomDataTable(data[ReadTableMsg_tableId])
+                response = GenerateRandomDataTable(data[Messages.ReadTableMsg_tableId])
             else:
                 logger.warning('Got unrecognized message.')
                 pass
@@ -314,12 +313,6 @@ def main():
                         default=None, help="Date/time at which to start retrieving database data.")
     parser.add_argument("-o", "--offsetHours", dest="hourOffset", action="store", default=None,
         help="Time offset from NOW to retrieve send data to client.  Negative values access database, positive values send random digits.")
-    # parser.add_argument("-w", "--water", dest="plots", action="append_const", const="RCWater", help="Show Ridgecrest Water graph.")
-    # parser.add_argument("-e", "--heaters", dest="plots", action="append_const", const="RCHeaters", help="Show Ridgecrest Heaters graph.")
-    # parser.add_argument("-p", "--power", dest="plots", action="append_const", const="RCPower", help="Show Ridgecrest Power graph.")
-    # parser.add_argument("-F", "--SSFurnace", dest="plots", action="append_const", const="SSFurnace", help="Show Steamboat Furnace graph.")
-    # parser.add_argument("-H", "--SSHumidities", dest="plots", action="append_const", const="SSHums", help="Show Steamboat Humidities graph.")
-    # parser.add_argument("-T", "--SSTemperatures", dest="plots", action="append_const", const="SSTemps", help="Show Steamboat Temperatures graph.")
     parser.add_argument("-a", "--anyMeter", dest="anyMeter", action="store_true",
                         default=None, help="Accept any meter Id.")
     parser.add_argument("-v", "--verbosity", dest="verbosity",
@@ -345,7 +338,7 @@ def main():
         else:
             minutesOffset = -1440       # default 1 day ago
     logger.debug('Using minutesOffset of: %s'%minutesOffset)
-    
+
     if args.anyMeter is not None:
         anyMeterOk = args.anyMeter
     logger.debug('Any meter is OK? %s'%anyMeterOk)
