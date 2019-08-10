@@ -29,7 +29,7 @@
             "class": "logging.handlers.RotatingFileHandler",
             "level": "DEBUG",
             "formatter": "extra",
-            "filename": ".log",
+            "filename": "<replaceMe>.log",
             "maxBytes": 1048576,
             "backupCount": 40,
             "encoding": "utf8"
@@ -39,7 +39,7 @@
             "class": "logging.handlers.RotatingFileHandler",
             "level": "ERROR",
             "formatter": "extra",
-            "filename": "_errors.log",
+            "filename": "<replaceMe>_errors.log",
             "maxBytes": 1048576,
             "backupCount": 40,
             "encoding": "utf8"
