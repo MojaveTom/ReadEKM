@@ -116,11 +116,13 @@ prevWaterWh = None
 prevHouseKWH = None
 
 
-#####  Define logging
-ProgFile = os.path.basename(sys.argv[0])
-ProgName, ext = os.path.splitext(ProgFile)
+ProgName, ext = os.path.splitext(os.path.basename(sys.argv[0]))
 ProgPath = os.path.dirname(os.path.realpath(sys.argv[0]))
+
+#####  Setup logging; first try for file specific, and if it doesn't exist, use a folder setup file.
 logConfFileName = os.path.join(ProgPath, ProgName + '_loggingconf.json')
+if not os.path.isfile(logConfFileName):
+    logConfFileName = os.path.join(ProgPath, 'Loggingconf.json')
 if os.path.isfile(logConfFileName):
     try:
         with open(logConfFileName, 'r') as logging_configuration_file:
@@ -132,13 +134,20 @@ if os.path.isfile(logConfFileName):
             logPath=""
         for p in config_dict['handlers'].keys():
             if 'filename' in config_dict['handlers'][p]:
-                logFileName = os.path.join(logPath, config_dict['handlers'][p]['filename'])
-                config_dict['handlers'][p]['filename'] = logFileName
+                config_dict['handlers'][p]['filename'] = os.path.join(logPath, ProgName + config_dict['handlers'][p]['filename'])
+
+        # # program specific logging configurations:
+        # config_dict["handlers"]["console"]["level"] = 'NOTSET'
+        # # config_dict["handlers"]["debug_file_handler"]["class"] = 'logging.FileHandler'
+        # config_dict["handlers"]["debug_file_handler"]["mode"] = '\'w\''
+
         logging.config.dictConfig(config_dict)
     except Exception as e:
         print("loading logger config from file failed.")
         print(e)
         pass
+else:
+    print("Logging configuration file not found.")
 
 logger = logging.getLogger(__name__)
 logger.info('logger name is: "%s"', logger.name)
@@ -164,15 +173,54 @@ def ekm_logger(output_string):
 ekm_set_log(ekm_logger)
 ekm_set_log_level(10)       # log EVERYTHING
 
-def GetConfigFilePath():
+#############  GetConfig
+def GetConfig():
+    '''
+Look for "secrets.ini" file in our directory, then in
+ProgName+'Secrets.ini' in our directory, then in the
+directory as defined in the "PrivateConfig" environment variable.
+    '''
+    config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
+    cfgDict = {}
     fp = os.path.join(ProgPath, 'secrets.ini')
     if not os.path.isfile(fp):
-        fp = os.environ['PrivateConfig']
+        fp = os.path.join(ProgPath, ProgName+'Secrets.ini')
         if not os.path.isfile(fp):
-            logger.error('No configuration file found: %s', fp)
-            sys.exit(1)
+            fp = os.environ['PrivateConfig']
+            if not os.path.isfile(fp):
+                raise UserWarning('No configuration file found.')
     logger.info('Using configuration file at: %s', fp)
-    return fp
+    config.read(fp)
+
+    ## Get parameters from the section with our host name.
+    cfgSection = os.environ['HOST']
+    logger.info("Reading INI file section is: %s", cfgSection)
+    if cfgSection in config:
+        cfg = config[cfgSection]
+        for k in cfg:
+            cfgDict[k] = cfg[k]
+
+    ## Get parameters from the section with our program name.
+    cfgSection = os.path.basename(sys.argv[0])
+    logger.info("Reading INI file section is: %s", cfgSection)
+    if cfgSection in config:
+        cfg = config[cfgSection]
+        for k in cfg:
+            cfgDict[k] = cfg[k]
+
+    ## Get parameters from the section with our program/host name.
+    cfgSection = os.path.basename(sys.argv[0])+"/"+os.environ['HOST']
+    logger.info("Reading INI file section is: %s", cfgSection)
+    if cfgSection in config:
+        cfg = config[cfgSection]
+        for k in cfg:
+            cfgDict[k] = cfg[k]
+
+    ## Check that we have all required parameters.
+    if set(cfgDict.keys()) < RequiredConfigParams:
+        logger.critical('Config file does not have all required params: "%s", it has params: "%s".', RequiredConfigParams, set(cfgDict.keys()))
+        sys.exit(3)
+    return cfgDict
 
 def getDatetimeFromEKM(estr='19051605223500'):
     #  Meter is always set to local standard time - avoids time change problems.
@@ -294,34 +342,35 @@ def main():
 
     global DBConn, myMeterId, meterAtable, meterBtable, dontWriteDb, localStandardTimeZone
 
+    try:
+        cfg = GetConfig()
+        #  Prepare MQTT parameters
+        mqttTopic  = cfg.get('mqtt_topic')
+        mqttPort   = cfg.get('mqtt_port')
+        mqttHost   = cfg.get('mqtt_host')
+
+        ############  setup database connection
+        user = cfg.get('inserter_user')
+        pwd  = cfg.get('inserter_password')
+        host = cfg.get('inserter_host')
+        port = int(cfg.get('inserter_port'))
+        schema = cfg.get('inserter_schema')
+
+        ############  other parameters from config
+        myMeterIdInt = cfg.get('meter_id')
+        meterSerialPort = cfg.get('meter_serial_port')
+
+    except UserWarning as w:
+        logger.warning(w)
     ## Determine the complete file paths for the config file and the graph definitions file.
-    config = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
-    configFile = GetConfigFilePath()
-    # configFileDir = os.path.dirname(configFile)
-
-    ##  Open up the configuration file and extract some parameters.
-    config.read(configFile)
-    cfgSection = ProgFile+"/"+os.environ['HOST']
-    logger.info("INI file cofig section is: %s", cfgSection)
-    # logger.debug('Config section has options: %s'%set(config.options(cfgSection)))
-    # logger.debug('Required options are: %s'%RequiredConfigParams)
-    if not config.has_section(cfgSection):
-        logger.critical('Config file "%s", has no section "%s".', configFile, cfgSection)
-        sys.exit(2)
-    if len( RequiredConfigParams - set(config.options(cfgSection))) > 0:
-        logger.critical('Config  section "%s" does not have all required params: "%s", it has params: "%s".', cfgSection, RequiredConfigParams, set(config.options(cfgSection)))
-        logger.debug('The missing params are: %s'%(RequiredConfigParams - set(config.options(cfgSection)),))
-        sys.exit(3)
-
-    cfg = config[cfgSection]
 
     parser = argparse.ArgumentParser(description = 'Display graphs of home parameters.\nDefaults to show all.')
-    parser.add_argument("-m","--meterId", dest="meterId", action="store", default=cfg['meter_id'], help="Numeric Id of EKM meter to read.")
+    parser.add_argument("-m","--meterId", dest="meterId", action="store", help="Numeric Id of EKM meter to read.")
     parser.add_argument("-i", "--interval", dest="interval", action="store", default='1', help="The interval in munutes between successive meter reads.")
     parser.add_argument("-r", "--repeatCount", dest="repeatCount", action="store", default='0', help="Number of times to read meters; 0 => forever.")
     parser.add_argument("-n", "--a_to_b_ratio", dest="aToBRatio", action="store", default='15', help="Number of times to read A data from V4 meters before reading B data.\n"
                                                                                                     "If zero don't read B data.")
-    parser.add_argument("-s", "--serial_port", dest="serialPort", action="store", default=cfg['meter_serial_port'], help="The serial port to which the EKM meter is connected.")
+    parser.add_argument("-s", "--serial_port", dest="serialPort", action="store", help="The serial port to which the EKM meter is connected.")
     parser.add_argument("-W", "--dontWriteToDB", dest="noWriteDb", action="store_true", default=False, help="Don't write to database [during debug defaults to True].")
     parser.add_argument("-v", "--verbosity", dest="verbosity", action="count", help="increase output verbosity", default=0)
     args = parser.parse_args()
@@ -329,32 +378,25 @@ def main():
     dontWriteDb = args.noWriteDb
     logger.debug('Write to DB? %s'%(not dontWriteDb))
 
-    logger.debug('Connecting to meter on serial port: %s'%args.serialPort)
+    ## Some program arguments may override configuration file values:
+    if args.serialPort is not None:
+        meterSerialPort = args.serialPort
+    logger.debug('Connecting to meter on serial port: %s'%meterSerialPort)
 
-    myMeterIdInt = int(args.meterId)
+    if args.meterId is not None:
+        myMeterIdInt = int(args.meterId)
     myMeterId = '%012d'%myMeterIdInt
     logger.debug('myMeterId is: %s'%myMeterId)
     if 0 < myMeterIdInt < 300000000:
         logger.critical('EKM V3 meters are not supported!')
         exit(2)
 
-    meterAtable = myMeterId + cfg['meter_table_a_suffix']
-    meterBtable = myMeterId + cfg['meter_table_b_suffix']
+    meterAtable = myMeterId + cfg.get('meter_table_a_suffix')
+    meterBtable = myMeterId + cfg.get('meter_table_b_suffix')
     logger.debug('meterAtable is "%s"'%meterAtable)
     logger.debug('meterBtable is "%s"'%meterBtable)
-    meterTable = cfg['meter_table']
+    meterTable = cfg.get('meter_table')
 
-    #  Prepare MQTT parameters
-    mqttTopic  = cfg['mqtt_topic']
-    mqttPort   = int(cfg['mqtt_port'])
-    mqttHost   = cfg['mqtt_host']
-
-    ############  setup database connection
-    user = cfg['inserter_user']
-    pwd  = cfg['inserter_password']
-    host = cfg['inserter_host']
-    port = int(cfg['inserter_port'])
-    schema = cfg['inserter_schema']
     logger.info("user %s"%(user,))
     logger.info("pwd %s"%(pwd,))
     logger.info("host %s"%(host,))
@@ -444,7 +486,7 @@ def main():
 
     dayNumber = int(secSinceEpoch / 86400) - 1      #  number of days since epoch till yesterday
 
-    with DBConn.cursor() as cursor, SerialPort(args.serialPort) as sp, V4Meter(myMeterId, sp) as myMeter:
+    with DBConn.cursor() as cursor, SerialPort(meterSerialPort) as sp, V4Meter(myMeterId, sp) as myMeter:
         try:
 ####    10      Loop the number of times specified
             loopCount = int(args.repeatCount)
