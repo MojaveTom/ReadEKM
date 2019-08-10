@@ -623,7 +623,7 @@ def main():
 
 ####    22          wait till next time to read A
                 sleepLength = intervalSec - time.time() % intervalSec
-                logger.debug("Sleep for %s sec."%sleepLength)
+                logger.debug("##############   Sleep for %s sec."%sleepLength)
                 time.sleep(sleepLength)
                 logger.debug('Slept for %s seconds.  It is now: %s'%(sleepLength, datetime.datetime.now().isoformat()))
 
@@ -636,8 +636,8 @@ def main():
     #     sp.closePort()
     # logger.debug('At end, serial port is open? %s'%sp.m_ser.is_open)
 
-    logger.info('             ##############   ReadEKM All Done   #################')
-
-if __name__ == "__main__":
-    main()
-    pass
+    if __name__ == "__main__":
+        logger.info('             ##############   ' + ProgName + ' --- Starting ---  #################')
+        main()
+        logger.info('             ##############   ' + ProgName + ' --- All Done ---  #################')
+        logging.shutdown()
