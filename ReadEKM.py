@@ -453,7 +453,18 @@ def main():
                 logger.debug('Entering read/store loop with loop count = %s'%loopCount)
 ####    11          set state of water valve based on magic water valve file
 ####                    (as a by-product, "A" data is read)
-                itsWet = os.path.exists(os.path.expandvars('${HOME}/.WeatherWet'))
+                itsWet = False
+                if os.path.exists(os.path.expandvars('${HOME}/.WaterValveOff')):
+                    with open(os.path.expandvars('${HOME}/.WaterValveOff'), 'r') as fp:
+                        offCount = fp.read()
+                        if len(offCount) > 0:
+                            try:
+                                offCount = int(offCount)
+                            except:
+                                offCount = 0
+                        else:
+                            offCount = 0
+                        itsWet = offCount > 0
                 waterOff = None
                 if itsWet:
                     logger.debug('It is wet out there; turn OFF main water valve.')
