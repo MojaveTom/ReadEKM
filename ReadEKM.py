@@ -124,6 +124,7 @@ logConfFileName = os.path.join(ProgPath, ProgName + '_loggingconf.json')
 if not os.path.isfile(logConfFileName):
     logConfFileName = os.path.join(ProgPath, 'Loggingconf.json')
 if os.path.isfile(logConfFileName):
+    # print('Using logging conf file: %s'%logConfFileName)
     try:
         with open(logConfFileName, 'r') as logging_configuration_file:
             config_dict = json.load(logging_configuration_file)
@@ -134,10 +135,13 @@ if os.path.isfile(logConfFileName):
             logPath=""
         for p in config_dict['handlers'].keys():
             if 'filename' in config_dict['handlers'][p]:
-                config_dict['handlers'][p]['filename'] = os.path.join(logPath, ProgName + config_dict['handlers'][p]['filename'])
+                fn = os.path.join(logPath, config_dict['handlers'][p]['filename'].replace('<replaceMe>', ProgName))
+                config_dict['handlers'][p]['filename'] = fn
+                # print('Setting handler %s filename to: %s'%(p, fn))
 
         # # program specific logging configurations:
-        # config_dict["handlers"]["console"]["level"] = 'NOTSET'
+        config_dict["handlers"]["console"]["level"] = 'NOTSET'
+        # print('Setting console handler level to NOTSET')
         # # config_dict["handlers"]["debug_file_handler"]["class"] = 'logging.FileHandler'
         # config_dict["handlers"]["debug_file_handler"]["mode"] = '\'w\''
 
@@ -151,6 +155,7 @@ else:
 
 logger = logging.getLogger(__name__)
 logger.info('logger name is: "%s"', logger.name)
+# print("ReadEKM starts . . . . logger name is \"%s\""%logger.name)
 
 #  Generate a timezone for  LocalStandardTime
 #  Leaving off zone name from timezone creator generates UTC based name which may be more meaningful.
@@ -346,7 +351,7 @@ def main():
         cfg = GetConfig()
         #  Prepare MQTT parameters
         mqttTopic  = cfg.get('mqtt_topic')
-        mqttPort   = cfg.get('mqtt_port')
+        mqttPort   = int(cfg.get('mqtt_port'))
         mqttHost   = cfg.get('mqtt_host')
 
         ############  setup database connection
@@ -357,7 +362,7 @@ def main():
         schema = cfg.get('inserter_schema')
 
         ############  other parameters from config
-        myMeterIdInt = cfg.get('meter_id')
+        myMeterIdStr = cfg.get('meter_id')
         meterSerialPort = cfg.get('meter_serial_port')
 
     except UserWarning as w:
@@ -384,7 +389,8 @@ def main():
     logger.debug('Connecting to meter on serial port: %s'%meterSerialPort)
 
     if args.meterId is not None:
-        myMeterIdInt = int(args.meterId)
+        myMeterIdStr = args.meterId
+    myMeterIdInt = int(myMeterIdStr)
     myMeterId = '%012d'%myMeterIdInt
     logger.debug('myMeterId is: %s'%myMeterId)
     if 0 < myMeterIdInt < 300000000:
@@ -480,7 +486,7 @@ def main():
     sleepLength = intervalSec - secSinceEpoch % intervalSec
     bIntervalSec = intervalSec * int(args.aToBRatio)
     nextBTime = int(secSinceEpoch + (bIntervalSec - secSinceEpoch  % bIntervalSec)) - 10        # 10 sec fudge factor
-    logger.debug("Sleep for %s sec."%sleepLength)
+    logger.debug("   ###########   Sleep for %s sec."%sleepLength)
     time.sleep(sleepLength)
     logger.debug('Slept for %s seconds.  It is now: %s'%(sleepLength, datetime.datetime.now().isoformat()))
 
@@ -498,15 +504,23 @@ def main():
                 itsWet = False
                 if os.path.exists(os.path.expandvars('${HOME}/.WaterValveOff')):
                     with open(os.path.expandvars('${HOME}/.WaterValveOff'), 'r') as fp:
+                        logger.debug('Opened water valve control file.')
                         offCount = fp.read()
+                        logger.debug('Read data from WVCF: \"%s\"'%offCount)
                         if len(offCount) > 0:
                             try:
                                 offCount = int(offCount)
                             except:
+                                logger.debug("WVCF contents doesn't convert to integer; assume dry")
                                 offCount = 0
                         else:
                             offCount = 0
+                            logger.debug('WVCF contents empty; assume dry')
+                        logger.debug('WVCF contents becomes: %s'%offCount)
                         itsWet = offCount > 0
+                        logger.debug('WVCF says it is wet?  %s'%itsWet)
+                else:
+                    logger.debug('The water valve control file does not exist, assume it is dry out there.')
                 waterOff = None
                 if itsWet:
                     logger.debug('It is wet out there; turn OFF main water valve.')
@@ -636,8 +650,8 @@ def main():
     #     sp.closePort()
     # logger.debug('At end, serial port is open? %s'%sp.m_ser.is_open)
 
-    if __name__ == "__main__":
-        logger.info('             ##############   ' + ProgName + ' --- Starting ---  #################')
-        main()
-        logger.info('             ##############   ' + ProgName + ' --- All Done ---  #################')
-        logging.shutdown()
+if __name__ == "__main__":
+    logger.info('             ##############   ' + ProgName + ' --- Starting ---  #################')
+    main()
+    logger.info('             ##############   ' + ProgName + ' --- All Done ---  #################')
+    logging.shutdown()
