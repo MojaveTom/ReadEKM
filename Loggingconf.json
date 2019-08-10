@@ -67,6 +67,6 @@
 
     "root": {
         "level": "NOTSET",
-        "handlers": ["debugconsole", "debug_file_handler"]
+        "handlers": ["console", "debug_file_handler"]
     }
 }
