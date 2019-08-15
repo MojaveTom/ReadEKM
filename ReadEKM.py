@@ -502,24 +502,25 @@ def main():
 ####    11          set state of water valve based on magic water valve file
 ####                    (as a by-product, "A" data is read)
                 itsWet = False
-                if os.path.exists(os.path.expandvars('${HOME}/.WaterValveOff')):
-                    with open(os.path.expandvars('${HOME}/.WaterValveOff'), 'r') as fp:
+                if os.path.exists(os.path.expandvars('${HOME}/.WaterValveOn')):
+                    with open(os.path.expandvars('${HOME}/.WaterValveOn'), 'r') as fp:
                         logger.debug('Opened water valve control file.')
-                        offCount = fp.read()
-                        logger.debug('Read data from WVCF: \"%s\"'%offCount)
-                        if len(offCount) > 0:
+                        onCount = fp.read()
+                        logger.debug('Read data from WVCF: \"%s\"'%onCount)
+                        if len(onCount) > 0:
                             try:
-                                offCount = int(offCount)
+                                onCount = int(onCount)
                             except:
                                 logger.debug("WVCF contents doesn't convert to integer; assume dry")
-                                offCount = 0
+                                onCount = 0
                         else:
-                            offCount = 0
+                            onCount = 0
                             logger.debug('WVCF contents empty; assume dry')
-                        logger.debug('WVCF contents becomes: %s'%offCount)
-                        itsWet = offCount > 0
+                        logger.debug('WVCF contents becomes: %s'%onCount)
+                        itsWet = onCount < 0
                         logger.debug('WVCF says it is wet?  %s'%itsWet)
                 else:
+                    itsWet = False
                     logger.debug('The water valve control file does not exist, assume it is dry out there.')
                 waterOff = None
                 if itsWet:
